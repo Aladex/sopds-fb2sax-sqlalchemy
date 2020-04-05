@@ -3,6 +3,7 @@ import os
 import zipfile
 from xml import sax
 from io import BytesIO
+import glob
 
 from book_tools.format.mimetype import Mimetype
 
@@ -109,7 +110,50 @@ def __xml_root_tag(file):
     return None
 
 if __name__ == "__main__":
-    f = FB2sax(open("111.fb2"), "111.fb2")
-    print(f.authors)
-    print(f.description)
-    print(f.series_info)
+    # zip = zipfile.ZipFile('books/fb2-153556-158325.zip')
+    # for n in zip.namelist():
+    #
+    #     f = zip.open(n)
+    #     zipped_book = FB2sax(f, n)
+    #     print(zipped_book.authors)
+    #     print(zipped_book.description)
+    #     print(zipped_book.series_info)
+    #     print(zipped_book.docdate)
+    #     print(zipped_book.language_code)
+    #     print(zipped_book.title)
+    #     print("\n\n\n")
+
+    # Получение папки с архивами из конфига
+    archives_list = glob.glob("books/*.zip")
+
+    # Запрос в бд списка архивов, которые уже были отсканированы
+    # Здесь будет запрос
+    print(archives_list)
+
+    # Сопоставили, получили только те, которые надо отсканировать
+    unscanned_archives = archives_list
+
+    # Проход по списку из полученных архивов
+    for archive_name in unscanned_archives:
+        # Открываем архив
+        scan_it = zipfile.ZipFile(archive_name)
+
+        # Проход по файлам в архиве
+        for f in scan_it.namelist():
+
+            # Открываем файл из архива
+            book = scan_it.open(f)
+
+            # Инициализируем класс для сканирования
+            zipped_book = FB2sax(book, f)
+
+            book_object = {
+                "filename": f,
+                "path": archive_name,
+                "format": "fb2",
+                "docdate": zipped_book.docdate,
+                "lang": zipped_book.language_code,
+                "title": zipped_book.title,
+                "annotation": zipped_book.description,
+            }
+            print(book_object)
