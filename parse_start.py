@@ -135,6 +135,8 @@ if __name__ == "__main__":
 
     # Проход по списку из полученных архивов
     for archive_name in unscanned_archives:
+        # Записываем архив в базу как несканированный
+
         # Открываем архив
         scan_it = zipfile.ZipFile(archive_name)
 
@@ -147,6 +149,9 @@ if __name__ == "__main__":
             # Инициализируем класс для сканирования
             zipped_book = FB2sax(book, f)
 
+
+
+            # Создаем объект книги для таблицы opds_catalog_book
             book_object = {
                 "filename": f,
                 "path": archive_name,
@@ -156,4 +161,26 @@ if __name__ == "__main__":
                 "title": zipped_book.title,
                 "annotation": zipped_book.description,
             }
-            print(book_object)
+
+            # Записываем объект в базу и получаем его ID
+
+            # Получаем список авторов из книги
+            authors = zipped_book.authors
+
+            for author in authors:
+                # Ищем автора в opds_catalog_author
+
+                # Если не находим автора, записываем его в таблицу и получаем его ID
+
+                # Записываем связку в opds_catalog_bauthor
+                print(author)
+
+            # Получаем список серий из книги
+            series = zipped_book.series_info
+
+            # Записываем книгу в серию opds_catalog_bseries
+            print(series)
+
+            print(book_object, "\n\n\n\n")
+
+        # Помечаем архив в базе как сканированный
