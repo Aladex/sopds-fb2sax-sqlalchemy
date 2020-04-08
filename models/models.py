@@ -26,6 +26,7 @@ class OpdsCatalogBook(Base):
     lang = Column(String(16), nullable=False)
     title = Column(String(512), nullable=False, index=True)
     annotation = Column(String(10000), nullable=False)
+    cover = Column(Boolean, default=False)
 
 
 class OpdsCatalogCatalog(Base):

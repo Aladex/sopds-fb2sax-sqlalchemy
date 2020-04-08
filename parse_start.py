@@ -1,18 +1,24 @@
-#import magic
+# import magic
 import os
+import errno
 import zipfile
 from xml import sax
 from io import BytesIO
 import glob
+from models.models import OpdsCatalogBook
+
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, and_, or_
 
 from book_tools.format.mimetype import Mimetype
 
 from book_tools.format.util import list_zip_file_infos
 from book_tools.format.epub import EPub
-from book_tools.format.fb2 import FB2, FB2Zip
+from book_tools.format.fb2 import FB2, FB2Zip, FB2Base
 from book_tools.format.fb2sax import FB2sax
 from book_tools.format.other import Dummy
 from book_tools.format.mobi import Mobipocket
+
 
 class mime_detector:
     @staticmethod
@@ -21,21 +27,21 @@ class mime_detector:
             return Mimetype.XML
         elif fmt.lower() == 'fb2':
             return Mimetype.FB2
-        elif fmt.lower() =='epub':
+        elif fmt.lower() == 'epub':
             return Mimetype.EPUB
-        elif fmt.lower() =='mobi':
+        elif fmt.lower() == 'mobi':
             return Mimetype.MOBI
         elif fmt.lower() == 'zip':
             return Mimetype.ZIP
-        elif fmt.lower() =='pdf':
+        elif fmt.lower() == 'pdf':
             return Mimetype.PDF
-        elif fmt.lower() =='doc' or fmt.lower()=='docx':
+        elif fmt.lower() == 'doc' or fmt.lower() == 'docx':
             return Mimetype.MSWORD
-        elif fmt.lower() =='djvu':
+        elif fmt.lower() == 'djvu':
             return Mimetype.DJVU
-        elif fmt.lower() =='txt':
+        elif fmt.lower() == 'txt':
             return Mimetype.TEXT
-        elif fmt.lower() =='rtf':
+        elif fmt.lower() == 'rtf':
             return Mimetype.RTF
         else:
             return Mimetype.OCTET_STREAM
@@ -44,6 +50,7 @@ class mime_detector:
     def file(filename):
         (n, e) = os.path.splitext(filename)
         return mime_detector.fmt(e[1:])
+
 
 def detect_mime(file, original_filename):
     FB2_ROOT = 'FictionBook'
@@ -67,7 +74,7 @@ def detect_mime(file, original_filename):
                     except Exception as e:
                         pass
         elif mime == Mimetype.OCTET_STREAM:
-            mobiflag =  file.read(68)
+            mobiflag = file.read(68)
             mobiflag = mobiflag[60:]
             if mobiflag.decode() == 'BOOKMOBI':
                 return Mimetype.MOBI
@@ -76,11 +83,12 @@ def detect_mime(file, original_filename):
 
     return mime
 
+
 def create_bookfile(file, original_filename):
     if isinstance(file, str):
         file = open(file, 'rb')
     file = BytesIO(file.read())
-    mimetype = detect_mime(file,original_filename)
+    mimetype = detect_mime(file, original_filename)
     if mimetype == Mimetype.EPUB:
         return EPub(file, original_filename)
     elif mimetype == Mimetype.FB2:
@@ -90,9 +98,10 @@ def create_bookfile(file, original_filename):
     elif mimetype == Mimetype.MOBI:
         return Mobipocket(file, original_filename)
     elif mimetype in [Mimetype.TEXT, Mimetype.PDF, Mimetype.MSWORD, Mimetype.RTF, Mimetype.DJVU]:
-       return Dummy(file, original_filename, mimetype)
+        return Dummy(file, original_filename, mimetype)
     else:
         raise Exception('File type \'%s\' is not supported, sorry' % mimetype)
+
 
 def __xml_root_tag(file):
     class XMLRootFound(Exception):
@@ -109,19 +118,12 @@ def __xml_root_tag(file):
         return e.name
     return None
 
+
 if __name__ == "__main__":
-    # zip = zipfile.ZipFile('books/fb2-153556-158325.zip')
-    # for n in zip.namelist():
-    #
-    #     f = zip.open(n)
-    #     zipped_book = FB2sax(f, n)
-    #     print(zipped_book.authors)
-    #     print(zipped_book.description)
-    #     print(zipped_book.series_info)
-    #     print(zipped_book.docdate)
-    #     print(zipped_book.language_code)
-    #     print(zipped_book.title)
-    #     print("\n\n\n")
+    DB_URL = "postgresql+psycopg2://sopds:sopds@127.0.0.1/sopds"
+    engine = create_engine(DB_URL)
+    Session = sessionmaker(bind=engine)
+    session = Session(autocommit=True)
 
     # Получение папки с архивами из конфига
     archives_list = glob.glob("books/*.zip")
@@ -145,42 +147,67 @@ if __name__ == "__main__":
 
             # Открываем файл из архива
             book = scan_it.open(f)
+            print(book.seek(0, 0))
+            try:
 
-            # Инициализируем класс для сканирования
-            zipped_book = FB2sax(book, f)
+                # Инициализируем класс для сканирования
+                zipped_book = FB2sax(book, f)
 
+                # Создаем объект книги для таблицы opds_catalog_book
+                book_object = {
+                    "filename": f,
+                    "path": archive_name.split("/")[-1],
+                    "format": "fb2",
+                    "docdate": zipped_book.docdate,
+                    "lang": zipped_book.language_code,
+                    "title": zipped_book.title,
+                    "annotation": zipped_book.description,
+                }
+                # zipped_book.extract_cover_internal("static")
+                # Записываем объект в базу и получаем его ID
 
+                # Получаем список авторов из книги
+                authors = zipped_book.authors
 
-            # Создаем объект книги для таблицы opds_catalog_book
-            book_object = {
-                "filename": f,
-                "path": archive_name,
-                "format": "fb2",
-                "docdate": zipped_book.docdate,
-                "lang": zipped_book.language_code,
-                "title": zipped_book.title,
-                "annotation": zipped_book.description,
-            }
+                for author in authors:
+                    # Ищем автора в opds_catalog_author
 
-            # Записываем объект в базу и получаем его ID
+                    # Если не находим автора, записываем его в таблицу и получаем его ID
 
-            # Получаем список авторов из книги
-            authors = zipped_book.authors
+                    # Записываем связку в opds_catalog_bauthor
+                    print(author)
 
-            for author in authors:
-                # Ищем автора в opds_catalog_author
+                # Получаем список серий из книги
+                series = zipped_book.series_info
 
-                # Если не находим автора, записываем его в таблицу и получаем его ID
+                # Записываем книгу в серию opds_catalog_bseries
+                print(series)
 
-                # Записываем связку в opds_catalog_bauthor
-                print(author)
+                print(book_object, "\n\n\n\n")
 
-            # Получаем список серий из книги
-            series = zipped_book.series_info
+                cover_extr = zipped_book.extract_cover_memory()
+                if cover_extr is not None:
+                    filename = "../books/static/" + archive_name.replace(".", "-") + "/" + f.replace(".", "-") + ".jpg"
+                    print(filename)
 
-            # Записываем книгу в серию opds_catalog_bseries
-            print(series)
+                    if not os.path.exists(os.path.dirname(filename)):
+                        try:
+                            os.makedirs(os.path.dirname(filename))
+                        except OSError as exc:  # Guard against race condition
+                            if exc.errno != errno.EEXIST:
+                                raise
 
-            print(book_object, "\n\n\n\n")
+                    db_book = session.query(OpdsCatalogBook). \
+                        filter(and_(
+                        OpdsCatalogBook.filename == f,
+                        OpdsCatalogBook.path == archive_name.split("/")[-1]
+                    )
+                    ).first()
+                    cover = open(filename, "wb")
+                    cover.write(cover_extr)
+                    cover.close()
+                    db_book.cover = True
 
-        # Помечаем архив в базе как сканированный
+            # Помечаем архив в базе как сканированный
+            except:
+                pass
