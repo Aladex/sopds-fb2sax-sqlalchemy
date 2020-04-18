@@ -46,10 +46,7 @@ if __name__ == "__main__":
     excluded_archives = [a for a in archives_list if a not in db_archives]
     for archive_name in excluded_archives:
         print(archive_name)
-        session.add(OpdsCatalogCatalog(
-            cat_name=archive_name,
-            is_scanned=True
-        ))
+
         # Открываем архив
         scan_it = zipfile.ZipFile(books_path + archive_name)
         for f in scan_it.namelist():
@@ -130,3 +127,9 @@ if __name__ == "__main__":
                     ser_id=bs[1],
                     book_id=book_object.id
                 ))
+            session.add(OpdsCatalogCatalog(
+                cat_name=archive_name,
+                is_scanned=True
+            ))
+    session.flush()
+    session.close()
