@@ -37,15 +37,6 @@ class OpdsCatalogCatalog(Base):
     is_scanned = Column(Boolean, default=False)
 
 
-class OpdsCatalogGenre(Base):
-    __tablename__ = 'opds_catalog_genre'
-
-    id = Column(Integer, primary_key=True)
-    genre = Column(String(32), nullable=False, index=True)
-    section = Column(String(64), nullable=False, index=True)
-    subsection = Column(String(100), nullable=False, index=True)
-
-
 class OpdsCatalogSery(Base):
     __tablename__ = 'opds_catalog_series'
 
@@ -63,17 +54,6 @@ class OpdsCatalogBauthor(Base):
 
     author = relationship('OpdsCatalogAuthor')
     book = relationship('OpdsCatalogBook')
-
-
-class OpdsCatalogBgenre(Base):
-    __tablename__ = 'opds_catalog_bgenre'
-
-    id = Column(Integer, primary_key=True)
-    book_id = Column(ForeignKey('opds_catalog_book.id', deferrable=True, initially='DEFERRED'), nullable=False, index=True)
-    genre_id = Column(ForeignKey('opds_catalog_genre.id', deferrable=True, initially='DEFERRED'), nullable=False, index=True)
-
-    book = relationship('OpdsCatalogBook')
-    genre = relationship('OpdsCatalogGenre')
 
 
 class OpdsCatalogBsery(Base):
