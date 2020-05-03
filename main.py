@@ -22,6 +22,7 @@ def get_or_create(session, model, **kwargs):
     else:
         instance = model(**kwargs)
         session.add(instance)
+        session.flush()
         return instance
 
 
@@ -29,7 +30,7 @@ if __name__ == "__main__":
     scan_conf = yaml.safe_load(open("config.yaml", 'r'))
     books_path = scan_conf["path_to_archives"]
 
-    DB_URL = "postgresql+psycopg2://sopds:sopds@127.0.0.1/sopds"
+    DB_URL = "postgresql+psycopg2://gopds:gopds@127.0.0.1/gopds"
     engine = create_engine(DB_URL)
     Session = sessionmaker(bind=engine)
     session = Session(autocommit=True)
@@ -55,7 +56,11 @@ if __name__ == "__main__":
             book = scan_it.open(f)
 
             # Инициализируем класс для сканирования
-            zipped_book = FB2sax(book, f)
+            try:
+                zipped_book = FB2sax(book, f)
+            except Exception as e:
+                print(e)
+                continue
             annotation = zipped_book.description if zipped_book.description else ''
             annotation = annotation.strip(strip_symbols) if isinstance(annotation, str) else annotation.decode(
                 'utf8').strip(strip_symbols)
@@ -106,8 +111,10 @@ if __name__ == "__main__":
                     author_name = ' '.join([author_names[-1], ' '.join(author_names[:-1])])
                 author = get_or_create(session, OpdsCatalogAuthor, full_name=author_name)
                 books_bauthors.append(author.id)
+                print(author.id, author.full_name)
 
             for ab in books_bauthors:
+                print(ab)
                 session.add(OpdsCatalogBauthor(
                     author_id=ab,
                     book_id=book_object.id
@@ -127,9 +134,11 @@ if __name__ == "__main__":
                     ser_id=bs[1],
                     book_id=book_object.id
                 ))
-            session.add(OpdsCatalogCatalog(
-                cat_name=archive_name,
-                is_scanned=True
-            ))
+            session.flush()
+
+        session.add(OpdsCatalogCatalog(
+            cat_name=archive_name,
+            is_scanned=True
+        ))
     session.flush()
     session.close()

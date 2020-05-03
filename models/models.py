@@ -42,7 +42,7 @@ class OpdsCatalogSery(Base):
 
     id = Column(Integer, primary_key=True)
     ser = Column(String(150), nullable=False, index=True)
-    lang_code = Column(Integer, nullable=False, index=True)
+    lang_code = Column(Integer, nullable=False, index=True, default=0)
 
 
 class OpdsCatalogBauthor(Base):
