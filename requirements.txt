@@ -1,6 +1,6 @@
 importlib-metadata==1.6.0
 inflect==4.1.0
-lxml==4.5.0
+lxml==4.6.2
 psycopg2-binary==2.8.4
 PyYAML==5.3.1
 sqlacodegen==2.1.0
