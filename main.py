@@ -29,8 +29,8 @@ def get_or_create(session, model, **kwargs):
 if __name__ == "__main__":
     scan_conf = yaml.safe_load(open("config.yaml", 'r'))
     books_path = scan_conf["path_to_archives"]
+    DB_URL = scan_conf["db_url"]
 
-    DB_URL = "postgresql+psycopg2://gopds:gopds@127.0.0.1/gopds"
     engine = create_engine(DB_URL)
     Session = sessionmaker(bind=engine)
     session = Session(autocommit=True)
