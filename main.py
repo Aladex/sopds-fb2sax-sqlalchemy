@@ -64,6 +64,8 @@ if __name__ == "__main__":
             annotation = zipped_book.description if zipped_book.description else ''
             annotation = annotation.strip(strip_symbols) if isinstance(annotation, str) else annotation.decode(
                 'utf8').strip(strip_symbols)
+            if len(annotation) > 1000:
+                annotation = annotation[0:1000]
 
             book_object = OpdsCatalogBook(
                 filename=f,
