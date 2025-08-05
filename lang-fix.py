@@ -12,6 +12,7 @@ from book_tools.format.util import strip_symbols
 from models.models import OpdsCatalogBook
 
 from openai import OpenAI
+from langdetect import detect
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -74,6 +75,12 @@ class LanguageUpdater:
 
         return "unknown"
 
+    def detect_language_from_text(self, text: str) -> str:
+        try:
+            return detect(text[:500])
+        except Exception:
+            return "unknown"
+
     def update_languages(self) -> None:
         base_path = self.config["path_to_archives"]
         session = self.Session()
@@ -92,10 +99,19 @@ class LanguageUpdater:
                         with z.open(book.filename) as f:
                             parsed = FB2sax(f, book.filename)
                             raw_lang = self.clean(parsed.language_code)
-                            lang = self.standardize_language(raw_lang)
-                            if lang != book.lang:
-                                logger.info(f"{book.filename} ({book.id}): {book.lang} -> {lang}")
-                                book.lang = lang
+                            lang_from_tag = self.standardize_language(raw_lang)
+
+                            sample = parsed.annotation or parsed.title or parsed.description or ""
+                            lang_from_text = self.detect_language_from_text(sample)
+
+                            if lang_from_tag != lang_from_text and lang_from_text != "unknown":
+                                logger.info(f"{book.filename} ({book.id}): tag={lang_from_tag}, detected={lang_from_text}")
+                                book.lang = lang_from_text
+                                session.commit()
+                                updated += 1
+                            elif lang_from_tag != book.lang:
+                                logger.info(f"{book.filename} ({book.id}): correcting lang from {book.lang} to {lang_from_tag}")
+                                book.lang = lang_from_tag
                                 session.commit()
                                 updated += 1
                 except Exception as e:
