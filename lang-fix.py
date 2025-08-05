@@ -33,7 +33,7 @@ class LanguageUpdater:
     def clean(self, text) -> str:
         if isinstance(text, bytes):
             text = text.decode("utf-8", errors="ignore")
-        return strip_symbols(text or "").strip().lower()
+        return (text or "").strip(strip_symbols).lower()
 
     def standardize_language(self, lang: str) -> str:
         lang = lang.lower().strip()
