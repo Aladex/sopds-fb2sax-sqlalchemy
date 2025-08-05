@@ -12,7 +12,8 @@ from book_tools.format.util import strip_symbols
 from models.models import OpdsCatalogBook
 
 from openai import OpenAI
-from langdetect import detect
+from langdetect import detect as langdetect_detect
+import langid
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -30,6 +31,12 @@ class LanguageUpdater:
         self.Session = sessionmaker(bind=self.engine)
         self.openai = OpenAI(api_key=self.config["openai_api_key"])
         self.lang_cache = {}
+
+        self.equivalent_pairs = {
+            ("ru", "uk"), ("uk", "ru"),
+            ("ru", "bg"), ("bg", "ru"),
+            ("bg", "mk"), ("mk", "bg"),
+        }
 
     def clean(self, text) -> str:
         if isinstance(text, bytes):
@@ -75,11 +82,35 @@ class LanguageUpdater:
 
         return "unknown"
 
-    def detect_language_from_text(self, text: str) -> str:
+    def detect_langdetect(self, text: str) -> str:
         try:
-            return detect(text[:500])
+            return langdetect_detect(text[:500])
         except Exception:
             return "unknown"
+
+    def detect_langid(self, text: str) -> str:
+        try:
+            lang, _ = langid.classify(text[:500])
+            return lang
+        except Exception:
+            return "unknown"
+
+    def detect_openai(self, text: str) -> str:
+        try:
+            response = self.openai.chat.completions.create(
+                model="gpt-4.1-nano",
+                messages=[{
+                    "role": "user",
+                    "content": f"Detect the ISO 639-1 language code of the following text. Respond only with the 2-letter code.\n\n{text[:1000]}"
+                }],
+                max_tokens=5,
+            )
+            code = response.choices[0].message.content.strip().lower()
+            if len(code) == 2 and code.isalpha():
+                return code
+        except Exception as e:
+            logger.error(f"OpenAI language detection failed: {e}")
+        return "unknown"
 
     def update_languages(self) -> None:
         base_path = self.config["path_to_archives"]
@@ -103,19 +134,41 @@ class LanguageUpdater:
 
                             annotation = self.clean(parsed.description)[:1000]
                             sample = annotation or parsed.title or ""
+                            if not sample or len(sample) < 100:
+                                logger.info(f"{book.filename} ({book.id}): text too short for detection")
+                                continue
 
-                            lang_from_text = self.detect_language_from_text(sample)
+                            lang1 = self.detect_langdetect(sample)
+                            lang2 = self.detect_langid(sample)
 
-                            if lang_from_tag != lang_from_text and lang_from_text != "unknown":
-                                logger.info(f"{book.filename} ({book.id}): tag={lang_from_tag}, detected={lang_from_text}")
-                                book.lang = lang_from_text
+                            lang_final = None
+
+                            # если tag и оба детектора совпали — оставляем
+                            if lang_from_tag == lang1 == lang2:
+                                lang_final = lang_from_tag
+
+                            # если tag и один из детекторов совпал — берём его
+                            elif lang_from_tag in [lang1, lang2]:
+                                lang_final = lang_from_tag
+
+                            # если все разные, и пара tag–detected не входит в допустимые — просим OpenAI
+                            elif (lang_from_tag, lang1) not in self.equivalent_pairs and (lang_from_tag, lang2) not in self.equivalent_pairs:
+                                lang_openai = self.detect_openai(sample)
+                                if lang_openai != "unknown":
+                                    logger.info(f"{book.filename} ({book.id}): tag={lang_from_tag}, ld={lang1}, lid={lang2}, openai={lang_openai}")
+                                    lang_final = lang_openai
+
+                            # если оба детектора совпали, но не с тегом — верим им
+                            elif lang1 == lang2 and lang1 != lang_from_tag and (lang_from_tag, lang1) not in self.equivalent_pairs:
+                                logger.info(f"{book.filename} ({book.id}): tag={lang_from_tag}, detectors={lang1} (used)")
+                                lang_final = lang1
+
+                            if lang_final and lang_final != book.lang:
+                                logger.info(f"{book.filename} ({book.id}): update lang from {book.lang} -> {lang_final}")
+                                book.lang = lang_final
                                 session.commit()
                                 updated += 1
-                            elif lang_from_tag != book.lang:
-                                logger.info(f"{book.filename} ({book.id}): correcting lang from {book.lang} to {lang_from_tag}")
-                                book.lang = lang_from_tag
-                                session.commit()
-                                updated += 1
+
                 except Exception as e:
                     logger.error(f"Error reading {book.filename} in {book.path}: {e}")
                     session.rollback()
