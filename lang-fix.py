@@ -58,7 +58,7 @@ class LanguageUpdater:
 
         try:
             response = self.openai.chat.completions.create(
-                model="gpt-4o-nano",
+                model="gpt-4.1-nano",
                 messages=[{
                     "role": "user",
                     "content": f"What is the ISO 639-1 code for the language '{lang}'? Respond only with the code."
