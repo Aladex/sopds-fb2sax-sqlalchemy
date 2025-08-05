@@ -166,6 +166,8 @@ class fb2parser:
 
    def start_element(self,name,attrs):
        name=name.lower()
+       if name == 'body':
+           self.in_body = True
        if self.process_description:
           self.author_first.tagopen(name)
           self.author_last.tagopen(name)
@@ -175,8 +177,7 @@ class fb2parser:
           self.annotation.tagopen(name)
           self.docdate.tagopen(name,attrs)
           self.series.tagopen(name,attrs)
-          if name == 'body':
-              self.in_body = True
+
           if self.rc!=0:
              if self.cover_name.tagopen(name,attrs):
                 cover_name=self.cover_name.getattr('l:href')
@@ -218,28 +219,28 @@ class fb2parser:
           elif len(self.author_last.getvalue())<len(self.author_first.getvalue()):
              self.author_last.values.append(" ")
 
-       if name==self.stoptag:
+       if name == self.stoptag:
           if self.rc!=0:
              if self.cover_image.cover_name == '':
                 raise StopIteration
              else:
                 self.process_description=False
-          else:
-             raise StopIteration
+          # else:
+          #    raise StopIteration
 
-   def char_data(self,data):
-       if self.process_description:
-          self.author_first.setvalue(data)
-          self.author_last.setvalue(data)
-          self.genre.setvalue(data)
-          self.lang.setvalue(data)
-          self.book_title.setvalue(data)
-          self.annotation.setvalue(data)
-          self.docdate.setvalue(data)
-       if self.rc!=0:
-          self.cover_image.add_data(data)
+   def char_data(self, data):
        if self.in_body:
            self.body_chunks.append(data)
+       if self.process_description:
+           self.author_first.setvalue(data)
+           self.author_last.setvalue(data)
+           self.genre.setvalue(data)
+           self.lang.setvalue(data)
+           self.book_title.setvalue(data)
+           self.annotation.setvalue(data)
+           self.docdate.setvalue(data)
+       if self.rc != 0:
+           self.cover_image.add_data(data)
 
    def parse(self,f,hsize=0):
         self.reset()
