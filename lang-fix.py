@@ -76,7 +76,8 @@ class LanguageUpdater:
 
     def update_languages(self) -> None:
         base_path = self.config["path_to_archives"]
-        with self.Session() as session:
+        session = self.Session()
+        try:
             books = session.query(OpdsCatalogBook).all()
             logger.info(f"Loaded {len(books)} books")
 
@@ -102,6 +103,11 @@ class LanguageUpdater:
 
             session.commit()
             logger.info(f"Updated language for {updated} books")
+        except Exception as e:
+            logger.error(f"Critical failure: {e}")
+            session.rollback()
+        finally:
+            session.close()
 
 
 if __name__ == "__main__":
