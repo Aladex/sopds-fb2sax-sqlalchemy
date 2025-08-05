@@ -101,7 +101,9 @@ class LanguageUpdater:
                             raw_lang = self.clean(parsed.language_code)
                             lang_from_tag = self.standardize_language(raw_lang)
 
-                            sample = parsed.annotation or parsed.title or parsed.description or ""
+                            annotation = self.clean(parsed.description)[:1000]
+                            sample = annotation or parsed.title or ""
+
                             lang_from_text = self.detect_language_from_text(sample)
 
                             if lang_from_tag != lang_from_text and lang_from_text != "unknown":
