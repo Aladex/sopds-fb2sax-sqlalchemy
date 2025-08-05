@@ -96,12 +96,13 @@ class LanguageUpdater:
                             if lang != book.lang:
                                 logger.info(f"{book.filename} ({book.id}): {book.lang} -> {lang}")
                                 book.lang = lang
+                                session.commit()
                                 updated += 1
                 except Exception as e:
                     logger.error(f"Error reading {book.filename} in {book.path}: {e}")
+                    session.rollback()
                     continue
 
-            session.commit()
             logger.info(f"Updated language for {updated} books")
         except Exception as e:
             logger.error(f"Critical failure: {e}")
