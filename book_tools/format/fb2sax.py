@@ -144,6 +144,8 @@ class fb2parser:
        self.process_description=True
        self.parse_error=0
        self.parse_errormsg=''
+       self.in_body = False
+       self.body_chunks = []
 
    def reset(self):
        self.process_description=True
@@ -156,6 +158,8 @@ class fb2parser:
        self.annotation.reset()
        self.series.reset()
        self.docdate.reset()
+       self.in_body = False
+       self.body_chunks = []
        if self.rc!=0:
           self.cover_name.reset()
           self.cover_image.reset()
@@ -171,6 +175,8 @@ class fb2parser:
           self.annotation.tagopen(name)
           self.docdate.tagopen(name,attrs)
           self.series.tagopen(name,attrs)
+          if name == 'body':
+              self.in_body = True
           if self.rc!=0:
              if self.cover_name.tagopen(name,attrs):
                 cover_name=self.cover_name.getattr('l:href')
@@ -187,6 +193,8 @@ class fb2parser:
 
    def end_element(self,name):
        name=name.lower()
+       if name == 'body':
+           self.in_body = False
        if self.process_description:
           self.author_first.tagclose(name)
           self.author_last.tagclose(name)
@@ -230,6 +238,8 @@ class fb2parser:
           self.docdate.setvalue(data)
        if self.rc!=0:
           self.cover_image.add_data(data)
+       if self.in_body:
+           self.body_chunks.append(data)
 
    def parse(self,f,hsize=0):
         self.reset()
@@ -247,6 +257,10 @@ class fb2parser:
         except Exception as err:
             self.parse_errormsg=err
             self.parse_error=1
+
+   def get_body_text(self):
+       return ''.join(self.body_chunks).strip()
+
 
 class FB2StructureException(Exception):
     def __init__(self, error):
@@ -269,6 +283,9 @@ class FB2sax(BookFile):
         self.__detect_language()
         self.__detect_docdate()
         self.description = self.__detect_description()
+        self.body_sample = self.fb2parser.get_body_text()
+        self.in_body = False
+        self.body_chunks = []
 
     def extract_cover_memory(self):
         imgfb2parser = fb2parser(1)

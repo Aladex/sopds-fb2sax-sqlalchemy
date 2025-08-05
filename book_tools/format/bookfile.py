@@ -11,6 +11,7 @@ class BookFile(object):
         self.mimetype = mimetype
         self.original_filename = original_filename
         self.title = original_filename
+        self.body_sample = None
         self.description = None
         self.authors = []
         self.tags = []
