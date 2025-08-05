@@ -134,7 +134,7 @@ class LanguageUpdater:
 
                             annotation = self.clean(parsed.description)[:1000]
                             sample = annotation or parsed.title or parsed.body_sample[:1000]
-                            if not sample or len(sample) < 100:
+                            if not sample or len(sample) < 10:
                                 logger.info(f"{book.filename} ({book.id}): text too short for detection")
                                 continue
 
