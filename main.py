@@ -117,12 +117,12 @@ class BookProcessor:
         if self.openai:
             try:
                 response = self.openai.chat.completions.create(
-                    model="gpt-4o-mini",  # Corrected to a valid model
+                    model="gpt-4.1-nano",  # Corrected to a valid model
                     messages=[{
                         "role": "user",
                         "content": f"What is the ISO 639-1 code for the language '{lang}'? Respond only with the code."
                     }],
-                    max_tokens=5,
+                    max_tokens=1000,
                 )
                 code = response.choices[0].message.content.strip().lower()
                 if len(code) == 2 and code.isalpha():
@@ -158,7 +158,7 @@ class BookProcessor:
                     "role": "user",
                     "content": f"Detect the ISO 639-1 language code of the following text. Respond only with the 2-letter code.\n\n{text[:1000]}"
                 }],
-                max_tokens=5,
+                max_tokens=1000,
             )
             code = response.choices[0].message.content.strip().lower()
             if len(code) == 2 and code.isalpha():
