@@ -43,7 +43,7 @@ def get_or_create(session, model, **kwargs):
     if not instance:
         instance = model(**kwargs)
         session.add(instance)
-        session.flush()
+        session.flush()  # Flush to get ID if needed, but within transaction
     return instance
 
 def process_author_name(author_name: str) -> str:
@@ -71,7 +71,7 @@ class BookProcessor:
     def __init__(self, config_path: str = "config.yaml"):
         self.config = load_config(config_path)
         self.engine = create_engine(self.config["db_url"])
-        self.Session = sessionmaker(bind=self.engine, autocommit=True)
+        self.Session = sessionmaker(bind=self.engine)  # Removed autocommit=True
         self.lang_cache = {}
         self.equivalent_pairs = {
             ("ru", "uk"), ("uk", "ru"),
@@ -117,7 +117,7 @@ class BookProcessor:
         if self.openai:
             try:
                 response = self.openai.chat.completions.create(
-                    model="gpt-4.1-nano",
+                    model="gpt-4o-mini",  # Corrected to a valid model
                     messages=[{
                         "role": "user",
                         "content": f"What is the ISO 639-1 code for the language '{lang}'? Respond only with the code."
@@ -153,7 +153,7 @@ class BookProcessor:
             return "unknown"
         try:
             response = self.openai.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-nano",
                 messages=[{
                     "role": "user",
                     "content": f"Detect the ISO 639-1 language code of the following text. Respond only with the 2-letter code.\n\n{text[:1000]}"
@@ -222,8 +222,12 @@ class BookProcessor:
                     logger.error(f"Error processing file {file_name}: {e}")
                     continue
 
-        session.add(OpdsCatalogCatalog(cat_name=archive_name, is_scanned=True))
-        session.flush()
+        try:
+            session.add(OpdsCatalogCatalog(cat_name=archive_name, is_scanned=True))
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to mark archive {archive_name} as scanned: {e}")
 
     def process_book(self, file_name: str, archive_name: str, book, session) -> None:
         """Process a single book file from the archive, including advanced language detection."""
@@ -253,23 +257,29 @@ class BookProcessor:
         else:
             final_lang = self.determine_language(lang_from_tag, sample)
 
-        book_object = OpdsCatalogBook(
-            filename=file_name,
-            path=archive_name,
-            format="fb2",
-            registerdate=datetime.now(),
-            docdate=self.clean_text(zipped_book.docdate),
-            lang=final_lang,
-            title=title,
-            annotation=annotation,
-        )
-        session.add(book_object)
-        session.flush()
+        try:
+            book_object = OpdsCatalogBook(
+                filename=file_name,
+                path=archive_name,
+                format="fb2",
+                registerdate=datetime.now(),
+                docdate=self.clean_text(zipped_book.docdate),
+                lang=final_lang,
+                title=title,
+                annotation=annotation,
+            )
+            session.add(book_object)
+            session.flush()  # To get book_object.id for relations
 
-        self.process_cover(zipped_book, book_object, archive_name, file_name)
-        self.process_authors(zipped_book, book_object, session)
-        self.process_series(zipped_book, book_object, session)
-        session.flush()
+            self.process_cover(zipped_book, book_object, archive_name, file_name)
+            self.process_authors(zipped_book, book_object, session)
+            self.process_series(zipped_book, book_object, session)
+
+            session.commit()
+            logger.info(f"Successfully committed book {file_name}")
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to commit book {file_name}: {e}")
 
     def process_cover(self, zipped_book, book_object, archive_name: str, file_name: str) -> None:
         """Extract and save book cover if available."""
