@@ -9,7 +9,7 @@ import yaml
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from book_tools.format.fb2sax import FB2sax
+from book_tools.format.fb2sax import FB2Sax
 from book_tools.format.util import strip_symbols
 from models.models import (
     OpdsCatalogBook,
@@ -232,7 +232,7 @@ class BookProcessor:
     def process_book(self, file_name: str, archive_name: str, book, session) -> None:
         """Process a single book file from the archive, including advanced language detection."""
         try:
-            zipped_book = FB2sax(book, file_name)
+            zipped_book = FB2Sax(book, file_name)
         except Exception as e:
             logger.error(f"Failed to parse book {file_name}: {e}")
             return
