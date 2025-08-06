@@ -71,7 +71,7 @@ class BookProcessor:
     def __init__(self, config_path: str = "config.yaml"):
         self.config = load_config(config_path)
         self.engine = create_engine(self.config["db_url"])
-        self.Session = sessionmaker(bind=self.engine)  # Removed autocommit=True
+        self.Session = sessionmaker(bind=self.engine, future=True)
         self.lang_cache = {}
         self.equivalent_pairs = {
             ("ru", "uk"), ("uk", "ru"),
@@ -89,7 +89,7 @@ class BookProcessor:
         """Clean text by decoding if bytes and stripping symbols."""
         if isinstance(text, bytes):
             text = text.decode("utf-8", errors="ignore")
-        return (text or "").strip(strip_symbols).lower()
+        return (text or "").strip(strip_symbols)
 
     def standardize_language(self, lang: str) -> str:
         """Standardize language code to ISO 639-1."""
