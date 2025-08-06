@@ -247,7 +247,7 @@ class BookProcessor:
 
         # Combine annotation and body_sample if annotation is too short
         sample = annotation
-        if len(sample) < 10:
+        if len(sample) < 100:
             remaining_length = 1000 - len(sample)
             sample += self.clean_text(zipped_book.body_sample)[:remaining_length]
 
