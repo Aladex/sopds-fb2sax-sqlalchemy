@@ -7,7 +7,7 @@ from typing import Dict
 import yaml
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from book_tools.format.fb2sax import FB2sax
+from book_tools.format.fb2sax import FB2Sax
 from book_tools.format.util import strip_symbols
 from models.models import OpdsCatalogBook
 
@@ -38,7 +38,7 @@ class LanguageUpdater:
             ("bg", "mk"), ("mk", "bg"),
         }
 
-    def clean(self, text) -> str:
+    def clean_text(self, text) -> str:
         if isinstance(text, bytes):
             text = text.decode("utf-8", errors="ignore")
         return (text or "").strip(strip_symbols).lower()
@@ -128,15 +128,16 @@ class LanguageUpdater:
                 try:
                     with zipfile.ZipFile(archive_path) as z:
                         with z.open(book.filename) as f:
-                            parsed = FB2sax(f, book.filename)
-                            raw_lang = self.clean(parsed.language_code)
+                            logger.info(f"Processing {book.filename} in {book.path}")
+                            parsed = FB2Sax(f, book.filename)
+                            raw_lang = self.clean_text(parsed.language_code)
                             lang_from_tag = self.standardize_language(raw_lang)
 
-                            annotation = self.clean(parsed.description)[:1000]
-                            sample = annotation or parsed.body_sample[:1000]
-                            if not sample or len(sample) < 10:
-                                logger.info(f"{book.filename} ({book.id}): text too short for detection")
-                                continue
+                            annotation = self.clean_text(parsed.description)[:1000]
+                            sample = annotation
+                            if len(sample) < 100:
+                                remaining_length = 1000 - len(sample)
+                                sample += self.clean_text(parsed.body_sample)[:remaining_length]
 
                             lang1 = self.detect_langdetect(sample)
                             lang2 = self.detect_langid(sample)
