@@ -20,10 +20,13 @@ from models.models import (
     OpdsCatalogBsery,
 )
 
+from openai import OpenAI
+from langdetect import detect as langdetect_detect
+import langid
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
-
 
 def load_config(config_path: str) -> Dict:
     """Load configuration from YAML file."""
@@ -34,7 +37,6 @@ def load_config(config_path: str) -> Dict:
         logger.error(f"Failed to load config: {e}")
         raise
 
-
 def get_or_create(session, model, **kwargs):
     """Get or create a database model instance."""
     instance = session.query(model).filter_by(**kwargs).first()
@@ -44,7 +46,6 @@ def get_or_create(session, model, **kwargs):
         session.flush()
     return instance
 
-
 def process_author_name(author_name: str) -> str:
     """Process author name to standardize format."""
     if "," not in author_name:
@@ -52,7 +53,6 @@ def process_author_name(author_name: str) -> str:
         if names:
             author_name = f"{names[-1]} {' '.join(names[:-1])}"
     return author_name
-
 
 def save_cover_image(cover_data: bytes, filename: str) -> bool:
     """Save cover image to disk."""
@@ -65,20 +65,140 @@ def save_cover_image(cover_data: bytes, filename: str) -> bool:
         logger.error(f"Failed to save cover {filename}: {e}")
         return False
 
-
 class BookProcessor:
-    """Class to handle book archive processing and database insertion."""
+    """Class to handle book archive processing, database insertion, and advanced language detection."""
 
     def __init__(self, config_path: str = "config.yaml"):
         self.config = load_config(config_path)
         self.engine = create_engine(self.config["db_url"])
         self.Session = sessionmaker(bind=self.engine, autocommit=True)
+        self.lang_cache = {}
+        self.equivalent_pairs = {
+            ("ru", "uk"), ("uk", "ru"),
+            ("ru", "bg"), ("bg", "ru"),
+            ("bg", "mk"), ("mk", "bg"),
+        }
+        # Initialize OpenAI if API key is provided
+        self.openai = None
+        if "openai_api_key" in self.config and self.config["openai_api_key"]:
+            self.openai = OpenAI(api_key=self.config["openai_api_key"])
+        else:
+            logger.warning("OpenAI API key not found in config. Language detection fallback to OpenAI will be skipped.")
 
     def clean_text(self, text) -> str:
         """Clean text by decoding if bytes and stripping symbols."""
         if isinstance(text, bytes):
             text = text.decode("utf-8", errors="ignore")
-        return (text or "").strip(strip_symbols)
+        return (text or "").strip(strip_symbols).lower()
+
+    def standardize_language(self, lang: str) -> str:
+        """Standardize language code to ISO 639-1."""
+        lang = lang.lower().strip()
+        if not lang:
+            return "unknown"
+        if lang in self.lang_cache:
+            return self.lang_cache[lang]
+
+        mapping = {
+            "ru": "ru", "rus": "ru", "russian": "ru",
+            "en": "en", "eng": "en", "english": "en",
+            "de": "de", "ger": "de", "german": "de",
+            "fr": "fr", "fre": "fr", "french": "fr",
+            # Add more mappings if needed
+        }
+        if lang in mapping:
+            self.lang_cache[lang] = mapping[lang]
+            return mapping[lang]
+
+        if len(lang) == 2 and lang.isalpha():
+            self.lang_cache[lang] = lang
+            return lang
+
+        if self.openai:
+            try:
+                response = self.openai.chat.completions.create(
+                    model="gpt-4.1-nano",
+                    messages=[{
+                        "role": "user",
+                        "content": f"What is the ISO 639-1 code for the language '{lang}'? Respond only with the code."
+                    }],
+                    max_tokens=5,
+                )
+                code = response.choices[0].message.content.strip().lower()
+                if len(code) == 2 and code.isalpha():
+                    self.lang_cache[lang] = code
+                    return code
+            except Exception as e:
+                logger.error(f"Language resolution error for '{lang}': {e}")
+        return "unknown"
+
+    def detect_langdetect(self, text: str) -> str:
+        """Detect language using langdetect."""
+        try:
+            return langdetect_detect(text[:500])
+        except Exception:
+            return "unknown"
+
+    def detect_langid(self, text: str) -> str:
+        """Detect language using langid."""
+        try:
+            lang, _ = langid.classify(text[:500])
+            return lang
+        except Exception:
+            return "unknown"
+
+    def detect_openai(self, text: str) -> str:
+        """Detect language using OpenAI as fallback."""
+        if not self.openai:
+            return "unknown"
+        try:
+            response = self.openai.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{
+                    "role": "user",
+                    "content": f"Detect the ISO 639-1 language code of the following text. Respond only with the 2-letter code.\n\n{text[:1000]}"
+                }],
+                max_tokens=5,
+            )
+            code = response.choices[0].message.content.strip().lower()
+            if len(code) == 2 and code.isalpha():
+                return code
+        except Exception as e:
+            logger.error(f"OpenAI language detection failed: {e}")
+        return "unknown"
+
+    def determine_language(self, lang_from_tag: str, sample: str) -> str:
+        """Determine final language using multi-detector logic with conflict resolution."""
+        lang1 = self.detect_langdetect(sample)
+        lang2 = self.detect_langid(sample)
+
+        lang_final = None
+
+        # If tag and both detectors match — use it
+        if lang_from_tag == lang1 == lang2:
+            lang_final = lang_from_tag
+
+        # If tag matches one detector — use tag
+        elif lang_from_tag in [lang1, lang2]:
+            lang_final = lang_from_tag
+
+        # If all different and not equivalent pairs — use OpenAI
+        elif (lang_from_tag, lang1) not in self.equivalent_pairs and (lang_from_tag, lang2) not in self.equivalent_pairs:
+            lang_openai = self.detect_openai(sample)
+            if lang_openai != "unknown":
+                logger.info(f"Language conflict resolved with OpenAI: tag={lang_from_tag}, ld={lang1}, lid={lang2}, openai={lang_openai}")
+                lang_final = lang_openai
+
+        # If both detectors match but not tag, and not equivalent — use detectors
+        elif lang1 == lang2 and lang1 != lang_from_tag and (lang_from_tag, lang1) not in self.equivalent_pairs:
+            logger.info(f"Language conflict: tag={lang_from_tag}, detectors={lang1} (used)")
+            lang_final = lang1
+
+        # Fallback to tag if no resolution
+        if not lang_final:
+            lang_final = lang_from_tag
+
+        return lang_final if lang_final != "unknown" else lang_from_tag  # Avoid "unknown" if possible
 
     def get_unscanned_archives(self, session) -> list:
         """Get list of unscanned archive paths."""
@@ -106,7 +226,7 @@ class BookProcessor:
         session.flush()
 
     def process_book(self, file_name: str, archive_name: str, book, session) -> None:
-        """Process a single book file from the archive."""
+        """Process a single book file from the archive, including advanced language detection."""
         try:
             zipped_book = FB2sax(book, file_name)
         except Exception as e:
@@ -117,13 +237,29 @@ class BookProcessor:
         annotation = self.clean_text(zipped_book.description)[:1000]
         title = self.clean_text(zipped_book.title) or file_name
 
+        # Language detection logic
+        raw_lang = self.clean_text(zipped_book.language_code)
+        lang_from_tag = self.standardize_language(raw_lang)
+
+        # Combine annotation and body_sample if annotation is too short
+        sample = annotation
+        if len(sample) < 10:
+            remaining_length = 1000 - len(sample)
+            sample += self.clean_text(zipped_book.body_sample)[:remaining_length]
+
+        if not sample or len(sample) < 10:
+            logger.info(f"{file_name}: text too short for detection, using tag: {lang_from_tag}")
+            final_lang = lang_from_tag
+        else:
+            final_lang = self.determine_language(lang_from_tag, sample)
+
         book_object = OpdsCatalogBook(
             filename=file_name,
             path=archive_name,
             format="fb2",
             registerdate=datetime.now(),
             docdate=self.clean_text(zipped_book.docdate),
-            lang=self.clean_text(zipped_book.language_code),
+            lang=final_lang,
             title=title,
             annotation=annotation,
         )
@@ -166,9 +302,9 @@ class BookProcessor:
         """Main process to scan and handle unscanned archives."""
         with self.Session() as session:
             unscanned_archives = self.get_unscanned_archives(session)
+            logger.info(f"Found {len(unscanned_archives)} unscanned archives")
             for archive_path in unscanned_archives:
                 self.scan_archive(archive_path, session)
-
 
 if __name__ == "__main__":
     processor = BookProcessor()
